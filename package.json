@@ -1,0 +1,23 @@
+{
+  "name": "playwright-runner",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "npx playwright test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Michael-R-Dickinson/playwright-runner.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Michael-R-Dickinson/playwright-runner/issues"
+  },
+  "homepage": "https://github.com/Michael-R-Dickinson/playwright-runner#readme",
+  "description": "",
+  "dependencies": {
+    "@playwright/test": "^1.56.1"
+  }
+}

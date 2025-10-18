@@ -1,0 +1,104 @@
+# .github/workflows/run-playwright.yml
+name: Run Playwright (dynamic script)
+
+on:
+  workflow_dispatch:
+    inputs:
+      script_b64:
+        description: "Base64-encoded Playwright test file contents"
+        required: true
+      filename:
+        description: "Filename to write under tests/"
+        required: false
+        default: "dynamic.spec.js"
+      webhook_url:
+        description: "Optional: POST result.json to this URL"
+        required: false
+        default: ""
+      target_url:
+        description: "Optional env TARGET_URL for your test"
+        required: false
+        default: ""
+      expected_title:
+        description: "Optional env EXPECTED_TITLE for your test"
+        required: false
+        default: ""
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install deps and browsers
+        run: |
+          npm ci
+          npx playwright install --with-deps
+
+      - name: Write dynamic test file
+        run: |
+          mkdir -p tests
+          echo "${{ inputs.script_b64 }}" | base64 -d > "tests/${{ inputs.filename }}"
+
+      - name: Run Playwright (JSON reporter)
+        env:
+          TARGET_URL: ${{ inputs.target_url }}
+          EXPECTED_TITLE: ${{ inputs.expected_title }}
+        run: |
+          # Do not fail the step so we can still summarize/post
+          npx playwright test "tests/${{ inputs.filename }}" --reporter=json > report.json || true
+
+      - name: Summarize to result.json
+        id: summarize
+        run: |
+          node - <<'NODE'
+          const fs = require('fs');
+          const r = JSON.parse(fs.readFileSync('report.json', 'utf8'));
+          const failures = [];
+          const walk = (n) => {
+            (n?.tests || []).forEach(t => {
+              const x = (t.results || [])[0] || {};
+              if (x.status !== 'passed') {
+                failures.push({
+                  title: (t.titlePath || [t.title]).join(' › '),
+                  status: x.status,
+                  error: x.error?.message,
+                });
+              }
+            });
+            (n?.suites || []).forEach(walk);
+          };
+          (r.suites || []).forEach(walk);
+          const out = {
+            ok: failures.length === 0 && r.status === 'passed',
+            status: r.status,
+            failedCount: failures.length,
+            failures
+          };
+          fs.writeFileSync('result.json', JSON.stringify(out));
+          console.log(JSON.stringify(out));
+          NODE
+          echo "result=$(cat result.json | tr '\n' ' ')" >> "$GITHUB_OUTPUT"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-output
+          path: |
+            report.json
+            result.json
+
+      - name: POST to webhook (optional)
+        if: ${{ inputs.webhook_url != '' }}
+        run: |
+          curl -sS -X POST \
+            -H "Content-Type: application/json" \
+            -d @result.json \
+            "${{ inputs.webhook_url }}"
